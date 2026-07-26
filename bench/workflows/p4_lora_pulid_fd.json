@@ -22,7 +22,7 @@
   },
   "6": {
     "class_type": "LoadImage",
-    "inputs": {"image": "alara_canonical.png"}
+    "inputs": {"image": "character_b_primary.png"}
   },
   "7": {
     "class_type": "ApplyPulidFlux",
@@ -113,6 +113,6 @@
   },
   "16": {
     "class_type": "SaveImage",
-    "inputs": {"images": ["15", 0], "filename_prefix": "bench_p3_lora_pulid_fd"}
+    "inputs": {"images": ["15", 0], "filename_prefix": "bench_p4_lora_pulid_fd"}
   }
 }

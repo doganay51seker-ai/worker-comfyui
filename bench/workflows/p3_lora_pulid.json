@@ -22,7 +22,7 @@
   },
   "6": {
     "class_type": "LoadImage",
-    "inputs": {"image": "alara_canonical.png"}
+    "inputs": {"image": "character_b_primary.png"}
   },
   "7": {
     "class_type": "ApplyPulidFlux",

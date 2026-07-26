@@ -8,7 +8,7 @@
     "inputs": {
       "model": ["1", 0], "clip": ["1", 1],
       "lora_name": "alara_karlisa_v2.safetensors",
-      "strength_model": 1.0, "strength_clip": 1.0
+      "strength_model": 0.7, "strength_clip": 0.7
     }
   },
   "8": {

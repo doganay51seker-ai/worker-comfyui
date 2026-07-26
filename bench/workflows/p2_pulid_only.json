@@ -17,7 +17,7 @@
   },
   "6": {
     "class_type": "LoadImage",
-    "inputs": {"image": "alara_canonical.png"}
+    "inputs": {"image": "character_b_primary.png"}
   },
   "7": {
     "class_type": "ApplyPulidFlux",
@@ -27,9 +27,9 @@
       "eva_clip": ["4", 0],
       "face_analysis": ["5", 0],
       "image": ["6", 0],
-      "weight": 0.9,
+      "weight": 0.85,
       "start_at": 0.0,
-      "end_at": 0.8
+      "end_at": 0.7
     }
   },
   "8": {
