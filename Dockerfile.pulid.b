@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# facenet-pytorch removed — incompatible with base torch 2.12 (see .a for details)
 RUN uv pip install \
     insightface==0.7.3 \
     onnxruntime-gpu==1.19.2 \
@@ -33,8 +34,7 @@ RUN uv pip install \
     ftfy==6.2.3 \
     einops==0.8.0 \
     timm==1.0.11 \
-    ultralytics==8.3.162 && \
-    uv pip install facenet-pytorch==2.6.0 --no-deps
+    ultralytics==8.3.162
 
 # PuLID FLUX node (balazik original — pinned to master branch commit)
 RUN cd /comfyui/custom_nodes && \

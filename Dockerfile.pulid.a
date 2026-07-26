@@ -30,7 +30,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Python deps — pinned. Impact Subpack demands ultralytics>=8.3.162 (verified).
-# facenet-pytorch installed with --no-deps to avoid torch downgrade.
+# NOTE: facenet-pytorch NOT installed — workflows use PulidFluxInsightFaceLoader
+# (CUDA), not lldacing's alternative PulidFluxFaceNetLoader path. facenet-pytorch
+# 2.6.0 is the latest release (Mar 2024) and pins torch<2.3, pillow<10.3,
+# numpy<2 — incompatible with the base image's torch 2.12 / pillow 12 / numpy 2.
 RUN uv pip install \
     insightface==0.7.3 \
     onnxruntime-gpu==1.19.2 \
@@ -38,8 +41,7 @@ RUN uv pip install \
     ftfy==6.2.3 \
     einops==0.8.0 \
     timm==1.0.11 \
-    ultralytics==8.3.162 && \
-    uv pip install facenet-pytorch==2.6.0 --no-deps
+    ultralytics==8.3.162
 
 # PuLID FLUX node (lldacing, pinned commit — fixes balazik model-pollution bug)
 # torch/torchvision/xformers filtered out to preserve base image versions.
