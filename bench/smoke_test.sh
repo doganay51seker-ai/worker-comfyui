@@ -102,6 +102,13 @@ echo "[smoke] === PuLID module direct import + INSIGHT loader in mappings ==="
 import importlib.util, os, sys, pathlib
 sys.path.insert(0, "/comfyui")
 
+# Directly importing a custom node also imports ComfyUI model_management.
+# GitHub's image builder has no NVIDIA driver, so mirror main.py's argument
+# setup and force CPU mode before the custom node touches comfy.cli_args.
+sys.argv = [sys.argv[0], "--cpu"]
+import comfy.options
+comfy.options.enable_args_parsing()
+
 # Try both known repo paths; the image contains exactly ONE
 candidates = [
     "/comfyui/custom_nodes/ComfyUI_PuLID_Flux_ll",   # candidate A (lldacing)
