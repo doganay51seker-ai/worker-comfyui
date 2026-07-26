@@ -112,7 +112,7 @@ ENV COMFY_MANAGER_MODE=offline
 # Load insightface antelope pack — FAIL the build if it can't initialize
 # (exercises the ONNX/CUDA provider path; catches library breakage that would
 # otherwise surface as a first-inference crash on a live worker)
-RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
+RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', root='/comfyui/models/insightface', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
 
 # Build-time smoke test 1/2: boot ComfyUI on CPU so a broken custom node fails HERE.
 # Same pattern as upstream Dockerfile line 85 — exercises full node graph.

@@ -234,6 +234,11 @@ def main() -> None:
     print(f"\n[done] ok={len(ok_rs)}/{len(jobs)} total_exec={total_exec_s}s exec_cost=${total_exec_cost}")
     print(f"[note] cold-start + idle NOT included — cross-check RunPod Billing dashboard")
 
+    # Non-zero exit if any job failed — prevents accidentally advancing to full
+    # benchmark after a smoke run had errors.
+    if len(ok_rs) != len(jobs):
+        raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -95,7 +95,7 @@ RUN mkdir -p /comfyui/models/ultralytics/bbox && \
 ENV COMFY_MANAGER_MODE=offline
 
 # Load insightface antelope pack — FAIL the build if it can't initialize
-RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
+RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', root='/comfyui/models/insightface', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
 
 # NOTE (Codex): balazik EVA loader does NOT use baked /comfyui/models/clip/... —
 # it downloads via HF cache on first inference. Baked EVA-CLIP file is unused in this
