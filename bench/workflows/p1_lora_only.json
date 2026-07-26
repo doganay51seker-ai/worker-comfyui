@@ -1,0 +1,50 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {"ckpt_name": "flux1-dev-fp8.safetensors"}
+  },
+  "2": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": ["1", 0], "clip": ["1", 1],
+      "lora_name": "alara_karlisa_v2.safetensors",
+      "strength_model": 1.0, "strength_clip": 1.0
+    }
+  },
+  "8": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"clip": ["2", 1], "text": "PROMPT_POSITIVE_PLACEHOLDER"}
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"clip": ["2", 1], "text": ""}
+  },
+  "10": {
+    "class_type": "FluxGuidance",
+    "inputs": {"conditioning": ["8", 0], "guidance": 3.5}
+  },
+  "11": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {"width": 832, "height": 1472, "batch_size": 1}
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["2", 0],
+      "positive": ["10", 0],
+      "negative": ["9", 0],
+      "latent_image": ["11", 0],
+      "steps": 25, "cfg": 1.0,
+      "sampler_name": "euler", "scheduler": "simple",
+      "denoise": 1.0, "seed": 42
+    }
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["12", 0], "vae": ["1", 2]}
+  },
+  "16": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["13", 0], "filename_prefix": "bench_p1_loraonly"}
+  }
+}

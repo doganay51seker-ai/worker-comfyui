@@ -1,0 +1,71 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {"ckpt_name": "flux1-dev-fp8.safetensors"}
+  },
+  "3": {
+    "class_type": "PulidFluxModelLoader",
+    "inputs": {"pulid_file": "pulid_flux_v0.9.1.safetensors"}
+  },
+  "4": {
+    "class_type": "PulidFluxEvaClipLoader",
+    "inputs": {}
+  },
+  "5": {
+    "class_type": "PulidFluxInsightFaceLoader",
+    "inputs": {"provider": "CUDA"}
+  },
+  "6": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "alara_canonical.png"}
+  },
+  "7": {
+    "class_type": "ApplyPulidFlux",
+    "inputs": {
+      "model": ["1", 0],
+      "pulid_flux": ["3", 0],
+      "eva_clip": ["4", 0],
+      "face_analysis": ["5", 0],
+      "image": ["6", 0],
+      "weight": 0.9,
+      "start_at": 0.0,
+      "end_at": 0.8
+    }
+  },
+  "8": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"clip": ["1", 1], "text": "PROMPT_POSITIVE_PLACEHOLDER"}
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"clip": ["1", 1], "text": ""}
+  },
+  "10": {
+    "class_type": "FluxGuidance",
+    "inputs": {"conditioning": ["8", 0], "guidance": 3.5}
+  },
+  "11": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {"width": 832, "height": 1472, "batch_size": 1}
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["7", 0],
+      "positive": ["10", 0],
+      "negative": ["9", 0],
+      "latent_image": ["11", 0],
+      "steps": 25, "cfg": 1.0,
+      "sampler_name": "euler", "scheduler": "simple",
+      "denoise": 1.0, "seed": 42
+    }
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["12", 0], "vae": ["1", 2]}
+  },
+  "16": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["13", 0], "filename_prefix": "bench_p2_pulidonly"}
+  }
+}
