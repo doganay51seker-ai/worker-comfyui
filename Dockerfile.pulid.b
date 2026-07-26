@@ -1,8 +1,8 @@
 # ============================================================================
 # CANDIDATE B: balazik/ComfyUI-PuLID-Flux (original FLUX port, alpha/prototype)
-# Same base + FaceDetailer + models — only PuLID node source differs from A
-# Used for A/B comparison against Candidate A (lldacing fork)
-# NOTE: Alara LoRA mounted via RunPod Network Volume `ugcinf-lora` (cec0y73w93)
+# Only differs from A in PuLID node source. NO facenet patch (balazik has no
+# facenet dependency). Same base + FaceDetailer + models.
+# Build only if candidate A fails.
 # ============================================================================
 
 FROM runpod/worker-comfyui:5.8.6-flux1-dev-fp8
@@ -19,6 +19,8 @@ ARG SIZE_PULID=1142099520
 ARG SIZE_EVACLIP=856461210
 ARG SIZE_YOLO_BBOX=52026019
 
+ENV VENV_PYTHON=/opt/venv/bin/python
+
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,15 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# facenet-pytorch removed — incompatible with base torch 2.12 (see .a for details)
-RUN uv pip install \
+RUN uv pip install --python ${VENV_PYTHON} \
     insightface==0.7.3 \
     onnxruntime-gpu==1.19.2 \
     facexlib==0.3.0 \
     ftfy==6.2.3 \
     einops==0.8.0 \
     timm==1.0.11 \
-    ultralytics==8.3.162
+    ultralytics==8.3.162 \
+    dill==0.4.1 \
+    piexif==1.1.3
 
 # PuLID FLUX node (balazik original — pinned to master branch commit)
 RUN cd /comfyui/custom_nodes && \
@@ -42,8 +45,8 @@ RUN cd /comfyui/custom_nodes && \
     cd ComfyUI-PuLID-Flux && \
     git checkout ${PULID_NODE_SHA} && \
     if [ -f requirements.txt ]; then \
-      grep -viE '^(torch|torchvision|torchaudio|xformers)([<>=~! ]|$)' requirements.txt > /tmp/req.txt; \
-      uv pip install -r /tmp/req.txt; \
+      grep -viE '^(torch|torchvision|torchaudio|xformers|onnxruntime)([<>=~! ;]|$)' requirements.txt > /tmp/req.txt; \
+      uv pip install --python ${VENV_PYTHON} -r /tmp/req.txt; \
     fi
 
 RUN cd /comfyui/custom_nodes && \
@@ -51,17 +54,21 @@ RUN cd /comfyui/custom_nodes && \
     cd ComfyUI-Impact-Pack && git checkout ${IMPACT_PACK_SHA} && \
     if [ -f requirements.txt ]; then \
       grep -viE '^(torch|torchvision|torchaudio|xformers|git\+)' requirements.txt > /tmp/ip.txt; \
-      uv pip install -r /tmp/ip.txt; \
+      uv pip install --python ${VENV_PYTHON} -r /tmp/ip.txt; \
     fi && \
     cd /comfyui/custom_nodes && \
     git clone https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
     cd ComfyUI-Impact-Subpack && git checkout ${IMPACT_SUBPACK_SHA} && \
     if [ -f requirements.txt ]; then \
       grep -viE '^(torch|torchvision|torchaudio|xformers)([<>=~! ]|$)' requirements.txt > /tmp/is.txt; \
-      uv pip install -r /tmp/is.txt; \
+      uv pip install --python ${VENV_PYTHON} -r /tmp/is.txt; \
     fi
 
-RUN uv pip check
+RUN uv pip check --python ${VENV_PYTHON}
+
+# NOTE (Codex): balazik EVA loader does NOT use baked /comfyui/models/clip/... —
+# it downloads via HF cache on first inference. Baked EVA-CLIP file is unused in this
+# candidate. Only build B if candidate A fails; expect a first-inference download.
 
 RUN mkdir -p /comfyui/models/pulid && \
     wget -q --tries=3 -O /comfyui/models/pulid/pulid_flux_v0.9.1.safetensors \
@@ -95,20 +102,11 @@ RUN mkdir -p /comfyui/models/ultralytics/bbox && \
 
 ENV COMFY_MANAGER_MODE=offline
 
-# Load insightface antelope pack — FAIL the build if it can't initialize
-RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', root='/comfyui/models/insightface', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
+RUN ${VENV_PYTHON} -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', root='/comfyui/models/insightface', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
 
-# NOTE (Codex): balazik EVA loader does NOT use baked /comfyui/models/clip/... —
-# it downloads via HF cache on first inference. Baked EVA-CLIP file is unused in this
-# candidate. Only build B if candidate A fails; expect a first-inference download.
-
-# Build-time smoke test 1/2: boot ComfyUI on CPU, catches broken imports
-RUN cd /comfyui && timeout 300 python main.py --quick-test-for-ci --cpu
-
-# Build-time smoke test 2/2: actually EXECUTE runtime check script
 COPY bench/smoke_test.sh /usr/local/bin/smoke-test.sh
 RUN chmod +x /usr/local/bin/smoke-test.sh && /usr/local/bin/smoke-test.sh
 
 LABEL org.opencontainers.image.title="ugc-pulid-candidate-b" \
-      org.opencontainers.image.description="PuLID FLUX (balazik original) + Impact Pack FaceDetailer + Alara LoRA support (LoRA mounted via network volume)" \
+      org.opencontainers.image.description="PuLID FLUX (balazik original) + Impact Pack FaceDetailer + Alara LoRA (via network volume)" \
       org.opencontainers.image.source="https://github.com/doganay51seker-ai/worker-comfyui"

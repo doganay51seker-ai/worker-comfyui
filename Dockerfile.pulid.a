@@ -1,9 +1,13 @@
 # ============================================================================
 # CANDIDATE A: lldacing/ComfyUI_PuLID_Flux_ll (maintained fork)
-# Base: runpod/worker-comfyui:5.8.6-flux1-dev-fp8 (FP8 — see BF16 note in SETUP)
-# All git clones pinned to specific commit SHAs, HF downloads pinned to revision
-# NOTE: Alara LoRA is NOT baked in — attach RunPod Network Volume `ugcinf-lora`
-#       (id: cec0y73w93) → /runpod-volume; workflows reference by filename.
+# Base: runpod/worker-comfyui:5.8.6-flux1-dev-fp8
+# All git clones pinned; HF downloads revision-pinned. Alara LoRA lives on
+# RunPod Network Volume 'ugcinf-lora' (cec0y73w93) → /runpod-volume.
+#
+# All uv pip commands are pinned to /opt/venv/bin/python. The base image's
+# runtime venv is /opt/venv; comfy-cli's default workspace venv is
+# /comfyui/.venv. Without --python, custom-node deps land in the wrong venv
+# and ComfyUI boots without them.
 # ============================================================================
 
 FROM runpod/worker-comfyui:5.8.6-flux1-dev-fp8
@@ -16,64 +20,70 @@ ARG HF_EVACLIP_REV=11afd202f2ae80869d6cef18b1ec775e79bd8d12
 ARG HF_ADETAILER_REV=53cc19de382014514d9d4038601d261a7faa9b7b
 ARG INSIGHTFACE_TAG=v0.7
 
-# Expected file sizes (bytes) for verification
 ARG SIZE_PULID=1142099520
 ARG SIZE_EVACLIP=856461210
 ARG SIZE_YOLO_BBOX=52026019
 
+ENV VENV_PYTHON=/opt/venv/bin/python
+
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-# System deps — python3.12-dev added for insightface sdist Cython compile (Python.h)
+# System deps — python3.12-dev added for insightface sdist Cython (Python.h)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake libgl1 libglib2.0-0 wget unzip ca-certificates \
-    python3.12-dev && \
+    python3.12-dev patch && \
     rm -rf /var/lib/apt/lists/*
 
-# Python deps — pinned. Impact Subpack demands ultralytics>=8.3.162 (verified).
-# NOTE: facenet-pytorch NOT installed — workflows use PulidFluxInsightFaceLoader
-# (CUDA), not lldacing's alternative PulidFluxFaceNetLoader path. facenet-pytorch
-# 2.6.0 is the latest release (Mar 2024) and pins torch<2.3, pillow<10.3,
-# numpy<2 — incompatible with the base image's torch 2.12 / pillow 12 / numpy 2.
-RUN uv pip install \
+# Python deps — pinned. All installs target /opt/venv explicitly.
+# NOTE: facenet-pytorch NOT installed. Its 2.6.0 (Mar 2024) release pins
+# torch<2.3 / pillow<10.3 / numpy<2 — incompatible with the base image's
+# torch 2.12 / pillow 12 / numpy 2. Instead we patch lldacing's pulidflux.py
+# to make the facenet import optional and skip registering
+# PulidFluxFaceNetLoader in NODE_CLASS_MAPPINGS. PulidFluxInsightFaceLoader
+# (which our workflows use) is unaffected.
+RUN uv pip install --python ${VENV_PYTHON} \
     insightface==0.7.3 \
     onnxruntime-gpu==1.19.2 \
     facexlib==0.3.0 \
     ftfy==6.2.3 \
     einops==0.8.0 \
     timm==1.0.11 \
-    ultralytics==8.3.162
+    ultralytics==8.3.162 \
+    dill==0.4.1 \
+    piexif==1.1.3
 
-# PuLID FLUX node (lldacing, pinned commit — fixes balazik model-pollution bug)
-# torch/torchvision/xformers filtered out to preserve base image versions.
-# Fail-fast: no || true masking.
+# PuLID FLUX node (lldacing pinned) + apply facenet-optional patch
+COPY patches/lldacing-facenet-optional.patch /tmp/lldacing-facenet-optional.patch
 RUN cd /comfyui/custom_nodes && \
     git clone https://github.com/lldacing/ComfyUI_PuLID_Flux_ll.git && \
     cd ComfyUI_PuLID_Flux_ll && \
     git checkout ${PULID_NODE_SHA} && \
+    patch -p1 < /tmp/lldacing-facenet-optional.patch && \
     if [ -f requirements.txt ]; then \
-      grep -viE '^(torch|torchvision|torchaudio|xformers)([<>=~! ]|$)' requirements.txt > /tmp/req.txt; \
-      uv pip install -r /tmp/req.txt; \
+      grep -viE '^(torch|torchvision|torchaudio|xformers|facenet-pytorch|onnxruntime|# facenet-pytorch)([<>=~! ;]|$)' requirements.txt > /tmp/req.txt; \
+      uv pip install --python ${VENV_PYTHON} -r /tmp/req.txt; \
     fi
 
 # Impact Pack + Subpack (pinned commits) — FaceDetailer node source
-# sam2 git+ dep filtered (we use bbox only, no SAM per Codex conservative FD plan)
+# sam2 git+ dep filtered (bbox-only FaceDetailer per Codex plan; sam2 is
+# large and needs its own model checkpoint we do not use)
 RUN cd /comfyui/custom_nodes && \
     git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
     cd ComfyUI-Impact-Pack && git checkout ${IMPACT_PACK_SHA} && \
     if [ -f requirements.txt ]; then \
       grep -viE '^(torch|torchvision|torchaudio|xformers|git\+)' requirements.txt > /tmp/ip.txt; \
-      uv pip install -r /tmp/ip.txt; \
+      uv pip install --python ${VENV_PYTHON} -r /tmp/ip.txt; \
     fi && \
     cd /comfyui/custom_nodes && \
     git clone https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
     cd ComfyUI-Impact-Subpack && git checkout ${IMPACT_SUBPACK_SHA} && \
     if [ -f requirements.txt ]; then \
       grep -viE '^(torch|torchvision|torchaudio|xformers)([<>=~! ]|$)' requirements.txt > /tmp/is.txt; \
-      uv pip install -r /tmp/is.txt; \
+      uv pip install --python ${VENV_PYTHON} -r /tmp/is.txt; \
     fi
 
-# Dependency sanity check
-RUN uv pip check
+# Dependency sanity check — on /opt/venv only
+RUN uv pip check --python ${VENV_PYTHON}
 
 # PuLID FLUX v0.9.1 model (~1.1 GB) — HF revision-pinned
 RUN mkdir -p /comfyui/models/pulid && \
@@ -109,24 +119,17 @@ RUN mkdir -p /comfyui/models/ultralytics/bbox && \
       echo "FAIL: yolo bbox size mismatch expected=$SIZE_YOLO_BBOX got=$ACTUAL_SIZE"; exit 1; \
     fi
 
-# Disable ComfyUI-Manager auto-fetch (paranoid — base image already sets offline)
 ENV COMFY_MANAGER_MODE=offline
 
 # Load insightface antelope pack — FAIL the build if it can't initialize
-# (exercises the ONNX/CUDA provider path; catches library breakage that would
-# otherwise surface as a first-inference crash on a live worker)
-RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', root='/comfyui/models/insightface', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
+RUN ${VENV_PYTHON} -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', root='/comfyui/models/insightface', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))"
 
-# Build-time smoke test 1/2: boot ComfyUI on CPU so a broken custom node fails HERE.
-# Same pattern as upstream Dockerfile line 85 — exercises full node graph.
-RUN cd /comfyui && timeout 300 python main.py --quick-test-for-ci --cpu
-
-# Build-time smoke test 2/2: actually EXECUTE the runtime check script now,
-# not just bake it. Verifies model file sizes + antelope pack + custom node dirs.
-# Runtime usage: docker run --entrypoint smoke-test.sh <image>
+# Build-time smoke test — bake and EXECUTE
+# smoke_test.sh runs ComfyUI --quick-test-for-ci, captures full log,
+# and greps for IMPORT FAILED / missing PuLID InsightFace loader.
 COPY bench/smoke_test.sh /usr/local/bin/smoke-test.sh
 RUN chmod +x /usr/local/bin/smoke-test.sh && /usr/local/bin/smoke-test.sh
 
 LABEL org.opencontainers.image.title="ugc-pulid-candidate-a" \
-      org.opencontainers.image.description="PuLID FLUX (lldacing) + Impact Pack FaceDetailer + Alara LoRA support (LoRA mounted via network volume)" \
+      org.opencontainers.image.description="PuLID FLUX (lldacing patched) + Impact Pack FaceDetailer + Alara LoRA (via network volume)" \
       org.opencontainers.image.source="https://github.com/doganay51seker-ai/worker-comfyui"

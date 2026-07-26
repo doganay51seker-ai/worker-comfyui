@@ -1,0 +1,33 @@
+diff --git a/pulidflux.py b/pulidflux.py
+index 802cd1d..4b6aff3 100644
+--- a/pulidflux.py
++++ b/pulidflux.py
+@@ -29 +29,7 @@ from PIL import Image
+-from facenet_pytorch import MTCNN, InceptionResnetV1
++try:
++    from facenet_pytorch import MTCNN, InceptionResnetV1
++    _FACENET_AVAILABLE = True
++except ImportError:
++    MTCNN = None
++    InceptionResnetV1 = None
++    _FACENET_AVAILABLE = False
+@@ -664,0 +671,5 @@ def get_models(device: torch.device):
++    if not _FACENET_AVAILABLE:
++        raise RuntimeError(
++            "facenet_pytorch not installed; PulidFluxFaceNetLoader is disabled. "
++            "Use PulidFluxInsightFaceLoader instead."
++        )
+@@ -866 +876,0 @@ NODE_CLASS_MAPPINGS = {
+-    "PulidFluxFaceNetLoader": PulidFluxFaceNetLoader,
+@@ -872 +881,0 @@ NODE_DISPLAY_NAME_MAPPINGS = {
+-    "PulidFluxFaceNetLoader": "Load FaceNet (PuLID Flux)",
+@@ -878,0 +888,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
++
++# Conditionally register the FaceNet loader only when facenet_pytorch is installed.
++# Base image ships torch>=2.12; facenet_pytorch 2.6.0 pins torch<2.3 and cannot be
++# installed without downgrading the base stack. Downstream workflows use
++# PulidFluxInsightFaceLoader, so PulidFluxFaceNetLoader is safe to omit here.
++if _FACENET_AVAILABLE:
++    NODE_CLASS_MAPPINGS["PulidFluxFaceNetLoader"] = PulidFluxFaceNetLoader
++    NODE_DISPLAY_NAME_MAPPINGS["PulidFluxFaceNetLoader"] = "Load FaceNet (PuLID Flux)"
++
