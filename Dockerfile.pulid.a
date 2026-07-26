@@ -23,9 +23,10 @@ ARG SIZE_YOLO_BBOX=52026019
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-# System deps
+# System deps — python3.12-dev added for insightface sdist Cython compile (Python.h)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake libgl1 libglib2.0-0 wget unzip ca-certificates && \
+    build-essential cmake libgl1 libglib2.0-0 wget unzip ca-certificates \
+    python3.12-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Python deps — pinned. Impact Subpack demands ultralytics>=8.3.162 (verified).

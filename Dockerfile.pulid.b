@@ -22,7 +22,8 @@ ARG SIZE_YOLO_BBOX=52026019
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake libgl1 libglib2.0-0 wget unzip ca-certificates && \
+    build-essential cmake libgl1 libglib2.0-0 wget unzip ca-certificates \
+    python3.12-dev && \
     rm -rf /var/lib/apt/lists/*
 
 RUN uv pip install \
