@@ -1,19 +1,33 @@
 name: pulid-candidates
 
-# Build ISOLATED candidate images for A/B testing (Alara identity lock research).
+# Build ISOLATED candidate images for causal identity-lock research.
 # Does NOT touch upstream release/dev pipeline.
-# Trigger: manual (workflow_dispatch) OR push a v* tag.
+#
+# Registry: GitHub Container Registry (ghcr.io) — free, tied to this repo.
+# No DockerHub / no external paid subscriptions.
+#
+# Trigger:
+#   - Push a tag matching `pulid-v*` (works from ANY branch)
+#   - workflow_dispatch (requires this file to exist on default branch)
+#
+# Candidate B is disabled by default per Codex: balazik EVA loader does not use
+# the baked local file. Only enable B if candidate A fails.
+
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: "Branch/ref to build from (default: pulid-candidates)"
+        required: false
+        default: "pulid-candidates"
       version_tag:
         description: "Image tag (e.g. 0.1.0)"
         required: true
         default: "0.1.0"
       candidates:
-        description: "Which candidates to build (comma-separated: a,b or a or b)"
+        description: "Which candidates to build (a | b | a,b) — default a only"
         required: false
-        default: "a,b"
+        default: "a"
   push:
     tags:
       - "pulid-v*"
@@ -37,26 +51,39 @@ jobs:
             name: balazik
 
     steps:
+      - name: Resolve checkout ref
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ github.event.inputs.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - name: Gate candidate selection
+        id: gate
+        run: |
+          SEL="${{ github.event.inputs.candidates || 'a' }}"
+          if echo ",$SEL," | grep -q ",${{ matrix.candidate.id }},"; then
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+            echo "skipping candidate ${{ matrix.candidate.id }} (not in selection: $SEL)"
+          fi
 
       - name: Free up disk space
+        if: steps.gate.outputs.build == 'true'
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           df -h
-
-      - name: Skip if candidate not selected
-        id: gate
-        run: |
-          SEL="${{ github.event.inputs.candidates || 'a,b' }}"
-          if echo ",$SEL," | grep -q ",${{ matrix.candidate.id }},"; then
-            echo "build=true" >> $GITHUB_OUTPUT
-          else
-            echo "build=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Set up QEMU
         if: steps.gate.outputs.build == 'true'
@@ -66,21 +93,25 @@ jobs:
         if: steps.gate.outputs.build == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to DockerHub
+      - name: Login to GitHub Container Registry
         if: steps.gate.outputs.build == 'true'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve version
+      - name: Resolve image tag
         id: ver
+        if: steps.gate.outputs.build == 'true'
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version_tag }}" >> $GITHUB_OUTPUT
           else
             echo "version=${GITHUB_REF#refs/tags/pulid-v}" >> $GITHUB_OUTPUT
           fi
+          # Repo owner in lowercase — ghcr requires lowercase namespace
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Build and push candidate ${{ matrix.candidate.id }} (${{ matrix.candidate.name }})
         if: steps.gate.outputs.build == 'true'
@@ -91,14 +122,15 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ vars.DOCKERHUB_REPO }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:${{ steps.ver.outputs.version }}
-            ${{ vars.DOCKERHUB_REPO }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:latest
-          cache-from: type=registry,ref=${{ vars.DOCKERHUB_REPO }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:buildcache
-          cache-to: type=registry,ref=${{ vars.DOCKERHUB_REPO }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:buildcache,mode=max
+            ghcr.io/${{ steps.ver.outputs.owner }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:${{ steps.ver.outputs.version }}
+            ghcr.io/${{ steps.ver.outputs.owner }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:latest
+          cache-from: type=registry,ref=ghcr.io/${{ steps.ver.outputs.owner }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ steps.ver.outputs.owner }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:buildcache,mode=max
 
       - name: Summary
         if: steps.gate.outputs.build == 'true'
         run: |
           echo "## Candidate ${{ matrix.candidate.id }} (${{ matrix.candidate.name }}) built" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`${{ vars.DOCKERHUB_REPO }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:${{ steps.ver.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`ghcr.io/${{ steps.ver.outputs.owner }}/ugc-pulid-candidate-${{ matrix.candidate.id }}:${{ steps.ver.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Dockerfile: \`${{ matrix.candidate.dockerfile }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Registry: ghcr.io (free, no DockerHub)" >> $GITHUB_STEP_SUMMARY

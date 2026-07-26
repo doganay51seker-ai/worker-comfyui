@@ -97,8 +97,15 @@ ENV COMFY_MANAGER_MODE=offline
 RUN python -c "import insightface; app=insightface.app.FaceAnalysis(name='antelopev2', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640))" \
   || echo "insightface pre-warm skipped (will download on first inference)"
 
+# NOTE (Codex): balazik EVA loader does NOT use baked /comfyui/models/clip/... —
+# it downloads via HF cache on first inference. Baked EVA-CLIP file is unused in this
+# candidate. Only build B if candidate A fails; expect a first-inference download.
+
+# Build-time smoke test (upstream pattern) — boots ComfyUI on CPU, catches broken imports
+RUN cd /comfyui && timeout 300 python main.py --quick-test-for-ci --cpu
+
 COPY bench/smoke_test.sh /usr/local/bin/smoke-test.sh
-RUN chmod +x /usr/local/bin/smoke-test.sh && /usr/local/bin/smoke-test.sh
+RUN chmod +x /usr/local/bin/smoke-test.sh
 
 LABEL org.opencontainers.image.title="ugc-pulid-candidate-b" \
       org.opencontainers.image.description="PuLID FLUX (balazik original) + Impact Pack FaceDetailer + Alara LoRA support (LoRA mounted via network volume)" \

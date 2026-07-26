@@ -173,6 +173,10 @@ def main() -> None:
         raise SystemExit(f"no manifest at {manifest_path} — run run_ab.py first")
     manifest = json.loads(manifest_path.read_text())
 
+    cost_note = manifest.get("cost_note")
+    if cost_note:
+        print(f"[score] cost note: {cost_note}")
+
     scored = []
     for r in manifest["results"]:
         if r["status"] != "ok":
@@ -193,7 +197,8 @@ def main() -> None:
     out = args.out / "scores.json"
     out.write_text(json.dumps({
         "endpoint": manifest.get("endpoint"),
-        "total_cost_usd_est": manifest.get("total_cost_usd_est"),
+        "total_execution_only_cost_est_usd": manifest.get("total_execution_only_cost_est_usd"),
+        "cost_note": manifest.get("cost_note"),
         "summary": summary,
         "records": scored,
     }, indent=2))

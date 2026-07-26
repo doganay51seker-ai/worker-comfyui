@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """
-Causal A/B benchmark — Codex-approved 4-way isolation.
+Causal 5-way isolation benchmark (Codex-approved).
 
-Pipelines (2 sahne × 4 pipeline × 3 seed = 24 imaj):
+Pipelines (2 sahne × 5 pipeline × 3 seed = 30 imaj):
   p0_flux_only            — baseline (no LoRA, no PuLID)
   p1_lora_only            — LoRA v2 alone
   p2_pulid_only           — PuLID alone (no LoRA)
-  p3_lora_pulid_fd        — LoRA + PuLID + conservative FaceDetailer
+  p3_lora_pulid           — LoRA + PuLID (NO FaceDetailer) ← Codex: needed to isolate FD effect
+  p4_lora_pulid_fd        — LoRA + PuLID + conservative FaceDetailer
 
-Reports real GPU-second cost from RunPod status executionTime, not per-image guesses.
-Requires: RUNPOD_API_KEY, RUNPOD_ENDPOINT_ID_CANDIDATE (must be NEW isolated endpoint).
+P3→P4 delta = causal FaceDetailer contribution.
+
+Cost reporting (Codex-flagged):
+  Reports 'execution_only_cost_est' — does NOT include cold-start / idle timeout
+  billing. Real cost measured from RunPod Billing dashboard delta.
+  GPU $/hr must be set explicitly via env; NO default (24 GB tiers vary
+  $0.68-$1.12/hr depending on GPU type).
+
+Job status handling: COMPLETED / FAILED / CANCELLED / TIMED_OUT all terminal.
+
+Requires: RUNPOD_API_KEY, RUNPOD_ENDPOINT_ID_CANDIDATE, RUNPOD_GPU_USD_PER_HOUR.
 """
 from __future__ import annotations
 
@@ -25,7 +35,6 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-# .env expected at ~/Desktop/ugcinf/.env (2 levels up from worker-comfyui/bench/)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 RUNPOD_API_KEY = os.environ["RUNPOD_API_KEY"]
@@ -33,8 +42,16 @@ ENDPOINT_ID = os.environ.get("RUNPOD_ENDPOINT_ID_CANDIDATE")
 if not ENDPOINT_ID:
     sys.exit("Set RUNPOD_ENDPOINT_ID_CANDIDATE (NEW endpoint, not prod etu96zf31linwc)")
 
-# GPU $/hr — set per real endpoint tier (Codex flag: guess is unreliable)
-GPU_USD_PER_HOUR = float(os.environ.get("RUNPOD_GPU_USD_PER_HOUR", "0.44"))
+# NO DEFAULT — must be set explicitly (Codex: $0.44 assumption wrong for L4/A5000/4090)
+_gpu_rate = os.environ.get("RUNPOD_GPU_USD_PER_HOUR")
+if not _gpu_rate:
+    sys.exit(
+        "Set RUNPOD_GPU_USD_PER_HOUR explicitly. Approximate 24 GB tiers:\n"
+        "  L4/A5000/3090: ~0.684\n"
+        "  4090 Pro:      ~1.116\n"
+        "Check RunPod Console for your endpoint's actual rate."
+    )
+GPU_USD_PER_HOUR = float(_gpu_rate)
 
 WF_DIR = Path(__file__).parent / "workflows"
 
@@ -56,8 +73,16 @@ SCENES = {
     ),
 }
 
-PIPELINES = ["p0_flux_only", "p1_lora_only", "p2_pulid_only", "p3_lora_pulid_fd"]
+PIPELINES = [
+    "p0_flux_only",
+    "p1_lora_only",
+    "p2_pulid_only",
+    "p3_lora_pulid",       # Codex-restored: needed to isolate FaceDetailer causal effect
+    "p4_lora_pulid_fd",
+]
 SEEDS = [42, 137, 2718]
+
+TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"}
 
 RUN_URL = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/run"
 STATUS_URL = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/status"
@@ -98,6 +123,7 @@ def submit(wf: dict, face_path: Path | None) -> str:
 
 
 def poll(job_id: str, timeout: int = 480) -> dict:
+    """Wait for terminal status. Handles COMPLETED/FAILED/CANCELLED/TIMED_OUT."""
     headers = {"Authorization": f"Bearer {RUNPOD_API_KEY}"}
     start = time.monotonic()
     while time.monotonic() - start < timeout:
@@ -105,12 +131,12 @@ def poll(job_id: str, timeout: int = 480) -> dict:
         r.raise_for_status()
         d = r.json()
         status = d.get("status")
-        if status == "COMPLETED":
-            return d
-        if status == "FAILED":
-            raise RuntimeError(f"failed: {d}")
+        if status in TERMINAL_STATUSES:
+            if status == "COMPLETED":
+                return d
+            raise RuntimeError(f"job {job_id} ended {status}: {d}")
         time.sleep(4)
-    raise TimeoutError(f"{job_id} timeout after {timeout}s")
+    raise TimeoutError(f"{job_id} client timeout after {timeout}s (last status={d.get('status')})")
 
 
 def save_image(data: dict, out_path: Path) -> None:
@@ -134,6 +160,7 @@ def one_job(scene: str, pipeline: str, seed: int, face_path: Path, out_dir: Path
         save_image(data, out_file)
         exec_ms = int(data.get("executionTime", 0))
         delay_ms = int(data.get("delayTime", 0))
+        # Execution-only cost estimate — does NOT include cold-start / idle billing
         cost_usd = round((exec_ms / 1000.0 / 3600.0) * GPU_USD_PER_HOUR, 5)
         return {
             "scene": scene, "pipeline": pipeline, "seed": seed,
@@ -141,7 +168,7 @@ def one_job(scene: str, pipeline: str, seed: int, face_path: Path, out_dir: Path
             "wall_s": round(time.time() - started, 1),
             "execution_ms": exec_ms,
             "delay_ms": delay_ms,
-            "cost_usd_est": cost_usd,
+            "execution_only_cost_est_usd": cost_usd,
             "output": str(out_file),
             "job_id": job_id,
         }
@@ -183,11 +210,11 @@ def main() -> None:
             r = fut.result()
             icon = "OK" if r["status"] == "ok" else "ERR"
             print(f"[{i}/{len(jobs)}] {icon} {r['scene']}/{r['pipeline']}/s{r['seed']} wall={r['wall_s']}s "
-                  f"exec={r.get('execution_ms', '?')}ms cost=${r.get('cost_usd_est', '?')}")
+                  f"exec={r.get('execution_ms', '?')}ms exec_cost=${r.get('execution_only_cost_est_usd', '?')}")
             results.append(r)
 
     ok_rs = [r for r in results if r["status"] == "ok"]
-    total_cost = round(sum(r["cost_usd_est"] for r in ok_rs), 4)
+    total_exec_cost = round(sum(r["execution_only_cost_est_usd"] for r in ok_rs), 4)
     total_exec_s = round(sum(r["execution_ms"] for r in ok_rs) / 1000.0, 1)
 
     manifest = {
@@ -196,11 +223,16 @@ def main() -> None:
         "total_jobs": len(jobs),
         "ok_count": len(ok_rs),
         "total_execution_s": total_exec_s,
-        "total_cost_usd_est": total_cost,
+        "total_execution_only_cost_est_usd": total_exec_cost,
+        "cost_note": (
+            "Execution-only estimate. Actual RunPod bill also includes cold-start "
+            "and idle-timeout minutes. Cross-check with Billing dashboard delta."
+        ),
         "results": results,
     }
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2))
-    print(f"\n[done] ok={len(ok_rs)}/{len(jobs)} total_exec={total_exec_s}s cost=${total_cost}")
+    print(f"\n[done] ok={len(ok_rs)}/{len(jobs)} total_exec={total_exec_s}s exec_cost=${total_exec_cost}")
+    print(f"[note] cold-start + idle NOT included — cross-check RunPod Billing dashboard")
 
 
 if __name__ == "__main__":
