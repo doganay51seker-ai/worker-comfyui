@@ -181,7 +181,11 @@ def main() -> None:
 
     print("[score] loading InsightFace antelopev2...")
     prepare_antelopev2_pack()
-    app = insightface.app.FaceAnalysis(name="antelopev2", providers=["CPUExecutionProvider"])
+    app = insightface.app.FaceAnalysis(
+        name="antelopev2",
+        allowed_modules=["detection", "recognition"],
+        providers=["CPUExecutionProvider"],
+    )
     app.prepare(ctx_id=0, det_size=(640, 640))
 
     print(f"[score] embedding reference: {args.face}")
