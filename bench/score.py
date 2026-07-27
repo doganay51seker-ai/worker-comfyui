@@ -123,14 +123,15 @@ def score_image(app, ref_emb: np.ndarray, img_path: Path) -> dict[str, Any]:
         return {"face_detected": False, "faces_found": len(faces)}
     x1, y1, x2, y2 = [float(v) for v in face.bbox]
     face_w = max(1.0, x2 - x1)
+    symmetry = face_symmetry_normalized(
+        getattr(face, "landmark_2d_106", None), face_w
+    )
     return {
         "face_detected": True,
         "faces_found": len(faces),
         "arcface_similarity": round(cosine(face.normed_embedding, ref_emb), 4),
         "plastic_skin_ratio": round(plastic_skin_ratio(img, face.bbox), 4),
-        "face_symmetry_norm": round(face_symmetry_normalized(
-            getattr(face, "landmark_2d_106", None), face_w
-        ), 4) if hasattr(face, "landmark_2d_106") else None,
+        "face_symmetry_norm": round(symmetry, 4) if symmetry is not None else None,
         "face_bbox": [int(v) for v in face.bbox],
         "face_width_px": round(face_w, 1),
         "det_score": round(float(face.det_score), 4),
@@ -183,7 +184,7 @@ def main() -> None:
     prepare_antelopev2_pack()
     app = insightface.app.FaceAnalysis(
         name="antelopev2",
-        allowed_modules=["detection", "recognition"],
+        allowed_modules=["detection", "recognition", "landmark_2d_106"],
         providers=["CPUExecutionProvider"],
     )
     app.prepare(ctx_id=0, det_size=(640, 640))
