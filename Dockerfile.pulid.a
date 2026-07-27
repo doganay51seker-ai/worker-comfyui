@@ -52,13 +52,15 @@ RUN uv pip install --python ${VENV_PYTHON} \
     dill==0.4.1 \
     piexif==1.1.3
 
-# PuLID FLUX node (lldacing pinned) + apply facenet-optional patch
+# PuLID FLUX node (lldacing pinned) + compatibility patches
 COPY patches/lldacing-facenet-optional.patch /tmp/lldacing-facenet-optional.patch
+COPY patches/lldacing-comfy-forward-compat.patch /tmp/lldacing-comfy-forward-compat.patch
 RUN cd /comfyui/custom_nodes && \
     git clone https://github.com/lldacing/ComfyUI_PuLID_Flux_ll.git && \
     cd ComfyUI_PuLID_Flux_ll && \
     git checkout ${PULID_NODE_SHA} && \
     patch -p1 < /tmp/lldacing-facenet-optional.patch && \
+    patch -p1 < /tmp/lldacing-comfy-forward-compat.patch && \
     if [ -f requirements.txt ]; then \
       grep -viE '^(torch|torchvision|torchaudio|xformers|facenet-pytorch|onnxruntime|# facenet-pytorch)([<>=~! ;]|$)' requirements.txt > /tmp/req.txt; \
       uv pip install --python ${VENV_PYTHON} -r /tmp/req.txt; \

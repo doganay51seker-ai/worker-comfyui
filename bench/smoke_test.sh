@@ -99,7 +99,7 @@ echo "[smoke] === PuLID module direct import + INSIGHT loader in mappings ==="
 # in isolation and inspect its published NODE_CLASS_MAPPINGS. This does NOT
 # require ComfyUI's init flow.
 "$PY_BIN" - <<'PYCHK'
-import importlib.util, os, sys, pathlib
+import importlib.util, inspect, os, sys, pathlib
 sys.path.insert(0, "/comfyui")
 
 # Directly importing a custom node also imports ComfyUI model_management.
@@ -142,6 +142,21 @@ if "PulidFluxInsightFaceLoader" not in ncm:
 
 print("  ok PuLID imported +", len(ncm), "nodes registered")
 print("  ok PulidFluxInsightFaceLoader is present")
+
+# ComfyUI 5.8.6 passes timestep_zero_index into Flux.forward_orig. The
+# lldacing hook replaces that method, so its signature must accept the new
+# keyword even though this benchmark does not use reference latents.
+hook_mod = __import__(f"{pkg_name}.PulidFluxHook", fromlist=["pulid_forward_orig"])
+hook_sig = inspect.signature(hook_mod.pulid_forward_orig)
+has_timestep_kw = "timestep_zero_index" in hook_sig.parameters
+has_var_kwargs = any(
+    p.kind == inspect.Parameter.VAR_KEYWORD for p in hook_sig.parameters.values()
+)
+if not (has_timestep_kw or has_var_kwargs):
+    print("FAIL: pulid_forward_orig cannot accept timestep_zero_index")
+    sys.exit(1)
+print("  ok pulid_forward_orig accepts timestep_zero_index")
+
 if "PulidFluxFaceNetLoader" in ncm:
     print("  info FaceNet loader also present (facenet_pytorch installed)")
 else:

@@ -52,6 +52,7 @@ if not _gpu_rate:
         "Check RunPod Console for your endpoint's actual rate."
     )
 GPU_USD_PER_HOUR = float(_gpu_rate)
+POLL_TIMEOUT_S = int(os.environ.get("RUNPOD_POLL_TIMEOUT_S", "1800"))
 
 WF_DIR = Path(__file__).parent / "workflows"
 
@@ -122,7 +123,7 @@ def submit(wf: dict, face_path: Path | None) -> str:
     return r.json()["id"]
 
 
-def poll(job_id: str, timeout: int = 480) -> dict:
+def poll(job_id: str, timeout: int = POLL_TIMEOUT_S) -> dict:
     """Wait for terminal status. Handles COMPLETED/FAILED/CANCELLED/TIMED_OUT."""
     headers = {"Authorization": f"Bearer {RUNPOD_API_KEY}"}
     start = time.monotonic()

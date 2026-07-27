@@ -1,0 +1,14 @@
+diff --git a/PulidFluxHook.py b/PulidFluxHook.py
+index 9432482..3e12522 100644
+--- a/PulidFluxHook.py
++++ b/PulidFluxHook.py
+@@ -146,7 +146,9 @@ def pulid_forward_orig(
+     y: Tensor,
+     guidance: Tensor = None,
+     control = None,
++    timestep_zero_index=None,
+     transformer_options={},
+     attn_mask: Tensor = None,
++    **kwargs,
+ ) -> Tensor:
+     patches_replace = transformer_options.get("patches_replace", {})
