@@ -151,12 +151,17 @@ def save_image(data: dict, out_path: Path) -> None:
 
 def one_job(scene: str, pipeline: str, seed: int, face_path: Path, out_dir: Path) -> dict:
     started = time.time()
+    job_id: str | None = None
     wf = load_workflow(pipeline)
     face_arg = face_path if workflow_needs_face(pipeline) else None
     wf = patch(wf, SCENES[scene], seed, face_path.name)
     out_file = out_dir / f"{scene}__{pipeline}__seed{seed}.png"
     try:
         job_id = submit(wf, face_arg)
+        print(
+            f"[submitted] {scene}/{pipeline}/s{seed} job_id={job_id}",
+            flush=True,
+        )
         data = poll(job_id)
         save_image(data, out_file)
         exec_ms = int(data.get("executionTime", 0))
@@ -178,6 +183,7 @@ def one_job(scene: str, pipeline: str, seed: int, face_path: Path, out_dir: Path
             "scene": scene, "pipeline": pipeline, "seed": seed,
             "status": "error", "error": str(e),
             "wall_s": round(time.time() - started, 1),
+            "job_id": job_id,
         }
 
 
