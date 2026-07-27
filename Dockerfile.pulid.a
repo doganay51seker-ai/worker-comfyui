@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN uv pip install --python ${VENV_PYTHON} \
     insightface==0.7.3 \
     onnxruntime-gpu==1.19.2 \
+    boto3==1.42.97 \
     facexlib==0.3.0 \
     ftfy==6.2.3 \
     einops==0.8.0 \
@@ -132,6 +133,17 @@ RUN ${VENV_PYTHON} -c "import insightface; app=insightface.app.FaceAnalysis(name
 COPY bench/smoke_test.sh /usr/local/bin/smoke-test.sh
 RUN chmod +x /usr/local/bin/smoke-test.sh && /usr/local/bin/smoke-test.sh
 
+# Fetch the private character LoRA from RunPod's S3-compatible volume at
+# worker start. This keeps the public image free of private model data and
+# avoids constraining Serverless GPU placement to one volume datacenter.
+COPY scripts/fetch-runtime-models.py /usr/local/bin/fetch-runtime-models.py
+COPY scripts/start-pulid-worker.sh /usr/local/bin/start-pulid-worker.sh
+RUN chmod +x /usr/local/bin/fetch-runtime-models.py \
+    /usr/local/bin/start-pulid-worker.sh && \
+    ${VENV_PYTHON} -m py_compile /usr/local/bin/fetch-runtime-models.py
+
+CMD ["/usr/local/bin/start-pulid-worker.sh"]
+
 LABEL org.opencontainers.image.title="ugc-pulid-candidate-a" \
-      org.opencontainers.image.description="PuLID FLUX (lldacing patched) + Impact Pack FaceDetailer + Alara LoRA (via network volume)" \
+      org.opencontainers.image.description="PuLID FLUX (lldacing patched) + Impact Pack FaceDetailer + private runtime LoRA bootstrap" \
       org.opencontainers.image.source="https://github.com/doganay51seker-ai/worker-comfyui"

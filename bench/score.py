@@ -25,6 +25,25 @@ from typing import Any
 import numpy as np
 
 
+def prepare_antelopev2_pack() -> None:
+    """Normalize InsightFace's occasionally double-nested model extraction."""
+    from insightface.utils.storage import ensure_available
+
+    model_dir = Path(ensure_available("models", "antelopev2"))
+    if list(model_dir.glob("*.onnx")):
+        return
+
+    nested_dir = model_dir / "antelopev2"
+    nested_models = list(nested_dir.glob("*.onnx"))
+    if not nested_models:
+        raise RuntimeError(f"antelopev2 ONNX files not found under {model_dir}")
+
+    for source in nested_models:
+        destination = model_dir / source.name
+        if not destination.exists():
+            destination.symlink_to(source.resolve())
+
+
 def largest_face(faces: list) -> Any:
     """Pick face with largest bbox area (not faces[0])."""
     if not faces:
@@ -161,6 +180,7 @@ def main() -> None:
     import insightface
 
     print("[score] loading InsightFace antelopev2...")
+    prepare_antelopev2_pack()
     app = insightface.app.FaceAnalysis(name="antelopev2", providers=["CPUExecutionProvider"])
     app.prepare(ctx_id=0, det_size=(640, 640))
 
